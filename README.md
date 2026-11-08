@@ -7,6 +7,7 @@ uninstall like the rest of the system - and survive PVE upgrades.
 | Package | What it does |
 |---|---|
 | [pve-console-log](packages/pve-console-log/) | Persistent console scrollback: logs VM serial and CT consoles from guest start and replays the tail when you open the console in the web GUI, so it is no longer blank. |
+| [pve-mods](packages/pve-mods/) | [Meliox/PVE-mods](https://github.com/Meliox/PVE-mods) (web UI mods: node sensors/GPU/UPS/storage health, no-nag), built from the fork [Msprg/PVE-mods](https://github.com/Msprg/PVE-mods). PVE 9.0+ only. |
 
 ## Install
 
@@ -39,7 +40,8 @@ release can report a hash mismatch - wait a few minutes and retry.
 ## Building from source
 
 ```sh
-make lint test build      # needs shellcheck, dpkg-dev, apt-utils; python3-pyte for the full test run
+git clone --recurse-submodules https://github.com/Msprg/pve-tools.git
+make lint test build      # needs shellcheck, dpkg-dev, apt-utils, debhelper; python3-pyte for the full test run
 sudo make repo-smoke      # builds a throwaway signed repo and checks it with apt (isolated apt state)
 ```
 
@@ -47,14 +49,18 @@ Layout:
 
 - `packages/<name>/root/` - files as installed; `debian/` - control, changelog,
   maintainer scripts; `tests/` - run by `make test`
+- `packages/<name>/pvetools.conf` + `source/` submodule - a package built from another
+  project's own `debian/` tree (downstream build, version `<upstream>+pvetools<N>`)
 - `scripts/` - `build-deb.sh` (reproducible: file times come from the changelog),
   `build-apt-repo.sh`, `repo-smoke-test.sh`, `lint.sh`, `run-tests.sh`
 - `pages/` - static files for the apt repository site (the `gh-pages` branch)
 
 ## Releasing
 
-1. Add an entry to `packages/<name>/debian/changelog` (`dch -v <version>` or by hand).
-2. Commit, then tag and push: `git tag <name>-v<version> && git push origin <name>-v<version>`.
+1. Own packages: add an entry to `packages/<name>/debian/changelog`. Downstream packages:
+   move the submodule and/or bump `REVISION` in `pvetools.conf` (see the package README).
+2. Commit, then tag and push the version `scripts/pkg-version.sh packages/<name>` prints:
+   `git tag <name>-v<version> && git push origin <name>-v<version>`.
 
 The [release workflow](.github/workflows/release.yml) checks the tag against the
 changelog, runs the tests, builds the `.deb`, adds it to the apt repository on
@@ -64,8 +70,9 @@ publishes it and creates the GitHub release. Published versions are never replac
 ## Other add-ons
 
 See [THIRD-PARTY.md](THIRD-PARTY.md) for add-ons by other authors that work well
-alongside these (not included here).
+alongside these and are not packaged here.
 
 ## License
 
-[GPL-3.0-or-later](LICENSE).
+[GPL-3.0-or-later](LICENSE), except packages built from other projects, which keep their own
+license (`packages/pve-mods/source`: MIT, Meliox and contributors).

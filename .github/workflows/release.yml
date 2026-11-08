@@ -1,5 +1,6 @@
 # Release one package: push a tag <package>-v<version>, e.g. pve-console-log-v0.1.0.
-# The version must match the first entry of packages/<package>/debian/changelog.
+# The version must match scripts/pkg-version.sh: the first entry of debian/changelog for our
+# own packages, <upstream version>+pvetools<REVISION> for downstream builds (pvetools.conf).
 # The .deb is added to the apt repository on the gh-pages branch (re-signed with the
 # APT_SIGNING_KEY secret), checked with apt, published, and attached to a GitHub release.
 name: release
@@ -16,10 +17,12 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
       - name: Install tools
         run: |
           sudo apt-get update -q
-          sudo apt-get install -y -q --no-install-recommends shellcheck python3-pyte dpkg-dev apt-utils
+          sudo apt-get install -y -q --no-install-recommends shellcheck python3-pyte dpkg-dev apt-utils debhelper
       - name: Resolve package and version from the tag
         id: tag
         env:
@@ -28,8 +31,8 @@ jobs:
           pkg=${TAG%-v*} ver=${TAG##*-v}
           case "$pkg" in ''|*[!a-z0-9.+-]*) echo "::error::bad package name in tag '$TAG'"; exit 1 ;; esac
           [ -d "packages/$pkg" ] || { echo "::error::no packages/$pkg for tag '$TAG'"; exit 1; }
-          cl=$(dpkg-parsechangelog -l "packages/$pkg/debian/changelog" -S Version)
-          [ "$cl" = "$ver" ] || { echo "::error::tag version '$ver' != changelog version '$cl'"; exit 1; }
+          cl=$(scripts/pkg-version.sh "packages/$pkg")
+          [ "$cl" = "$ver" ] || { echo "::error::tag version '$ver' != package version '$cl'"; exit 1; }
           echo "pkg=$pkg" >> "$GITHUB_OUTPUT"
           echo "ver=$ver" >> "$GITHUB_OUTPUT"
       - name: Lint and test
@@ -87,6 +90,5 @@ jobs:
           VER: ${{ steps.tag.outputs.ver }}
           DEB: ${{ steps.build.outputs.deb }}
         run: |
-          dpkg-parsechangelog -l "packages/$PKG/debian/changelog" -S Changes | tail -n +4 | sed 's/^  //' > "$RUNNER_TEMP/notes.md"
-          printf '\nInstall from the apt repository: https://msprg.github.io/pve-tools/\n' >> "$RUNNER_TEMP/notes.md"
+          scripts/release-notes.sh "packages/$PKG" > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" "$DEB" --title "$PKG $VER" --notes-file "$RUNNER_TEMP/notes.md"
