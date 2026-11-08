@@ -4,35 +4,35 @@ Hash: SHA512
 Architectures: amd64 arm64
 Codename: stable
 Components: main
-Date: Sun, 08 Nov 2026 14:57:15 +0000
+Date: Sun, 08 Nov 2026 22:21:48 +0000
 Description: pve-tools: add-ons for Proxmox VE (https://github.com/Msprg/pve-tools)
 Label: pve-tools
 Origin: pve-tools
 Suite: stable
 MD5Sum:
- d41d8cd98f00b204e9800998ecf8427e                0 main/binary-amd64/Packages
- 4a4dd3598707603b3f76a2378a4504aa               20 main/binary-amd64/Packages.gz
- d41d8cd98f00b204e9800998ecf8427e                0 main/binary-arm64/Packages
- 4a4dd3598707603b3f76a2378a4504aa               20 main/binary-arm64/Packages.gz
+ 76109d78f950c285db63b12cc9273261             1471 main/binary-amd64/Packages
+ 75094516a372da5bef2f785a14487fa9              929 main/binary-amd64/Packages.gz
+ 76109d78f950c285db63b12cc9273261             1471 main/binary-arm64/Packages
+ 75094516a372da5bef2f785a14487fa9              929 main/binary-arm64/Packages.gz
 SHA1:
- da39a3ee5e6b4b0d3255bfef95601890afd80709                0 main/binary-amd64/Packages
- a0fddd5458378c1bf3c10dd2f5c060d1347741ed               20 main/binary-amd64/Packages.gz
- da39a3ee5e6b4b0d3255bfef95601890afd80709                0 main/binary-arm64/Packages
- a0fddd5458378c1bf3c10dd2f5c060d1347741ed               20 main/binary-arm64/Packages.gz
+ be649a0955a322735a74679d00dd7f6a88689b90             1471 main/binary-amd64/Packages
+ 05199fbd6d94d40757b48cebca216209c9b5bd98              929 main/binary-amd64/Packages.gz
+ be649a0955a322735a74679d00dd7f6a88689b90             1471 main/binary-arm64/Packages
+ 05199fbd6d94d40757b48cebca216209c9b5bd98              929 main/binary-arm64/Packages.gz
 SHA256:
- e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 main/binary-amd64/Packages
- f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec               20 main/binary-amd64/Packages.gz
- e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855                0 main/binary-arm64/Packages
- f61f27bd17de546264aa58f40f3aafaac7021e0ef69c17f6b1b4cd7664a037ec               20 main/binary-arm64/Packages.gz
+ 060b703a34eb9478ef845a8a34e2f6a7bc305ad0c5c6faeb38b7bcdd3bfa750c             1471 main/binary-amd64/Packages
+ 95e41ca7ba9f805b9e2dab16a5ec5460abd8cc7ffda5c821eeab40d79863a5c2              929 main/binary-amd64/Packages.gz
+ 060b703a34eb9478ef845a8a34e2f6a7bc305ad0c5c6faeb38b7bcdd3bfa750c             1471 main/binary-arm64/Packages
+ 95e41ca7ba9f805b9e2dab16a5ec5460abd8cc7ffda5c821eeab40d79863a5c2              929 main/binary-arm64/Packages.gz
 SHA512:
- cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e                0 main/binary-amd64/Packages
- 1b46b9b08d5b338be9d732a1724795b2eab63daffde377218727c90857b79fe6a47bceed495117fcde60f7339812ef75ef4c69f82dd79fb69b6cbf8006b521f2               20 main/binary-amd64/Packages.gz
- cf83e1357eefb8bdf1542850d66d8007d620e4050b5715dc83f4a921d36ce9ce47d0d13c5d85f2b0ff8318d2877eec2f63b931bd47417a81a538327af927da3e                0 main/binary-arm64/Packages
- 1b46b9b08d5b338be9d732a1724795b2eab63daffde377218727c90857b79fe6a47bceed495117fcde60f7339812ef75ef4c69f82dd79fb69b6cbf8006b521f2               20 main/binary-arm64/Packages.gz
+ 8c5dbe41eb6c332f8d57bfd2b239661067da13d285b1d73a8eb01b1797dea931d357dd12b99c60a7238605b9c255936437c235973442b8246b13c51eb3f48ead             1471 main/binary-amd64/Packages
+ 6581c0ee2fd935a4656469e30e388572957df3dc1198dbfd5fc275e072f01559d13aead4b60c606d19aa485ca16a28049b278531e1add1dde73d91fb1377c688              929 main/binary-amd64/Packages.gz
+ 8c5dbe41eb6c332f8d57bfd2b239661067da13d285b1d73a8eb01b1797dea931d357dd12b99c60a7238605b9c255936437c235973442b8246b13c51eb3f48ead             1471 main/binary-arm64/Packages
+ 6581c0ee2fd935a4656469e30e388572957df3dc1198dbfd5fc275e072f01559d13aead4b60c606d19aa485ca16a28049b278531e1add1dde73d91fb1377c688              929 main/binary-arm64/Packages.gz
 -----BEGIN PGP SIGNATURE-----
 
-iHUEARYKAB0WIQRG/GPsEoSFyNuJJbWQufc6a4MMXwUCavCNywAKCRCQufc6a4MM
-X4y2AP0a/EopP1OzZDdAIsTa+Q1ELhQdvhk0WgkBJNzCGni7BQEAhWlGaap7Gj+B
-+VWNS72Kb1LHfYKql2wQkSakrqKzLgo=
-=JAzX
+iHUEARYKAB0WIQRG/GPsEoSFyNuJJbWQufc6a4MMXwUCavD1/AAKCRCQufc6a4MM
+X97ZAQC0oXNj/c/TiAIY+Zr9eyLhVmkhqXUmA5SGYovdm60eEQEAvajANM6wc24y
+4VrUxW+kEriodo5PAXkgYgQURr8iCw8=
+=ruur
 -----END PGP SIGNATURE-----

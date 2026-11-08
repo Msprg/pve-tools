@@ -1,0 +1,29 @@
+Package: pve-console-log
+Architecture: all
+Version: 0.1.0
+Priority: optional
+Section: admin
+Maintainer: Msprg <18015488+Msprg@users.noreply.github.com>
+Installed-Size: 33
+Depends: qemu-server (>= 8.0), dtach, socat, python3, perl, coreutils
+Recommends: python3-pyte, logrotate
+Filename: pool/main/pve-console-log/pve-console-log_0.1.0_all.deb
+Size: 15604
+MD5sum: fa4963273a0b54449d441ca05c64ee23
+SHA1: 69e49129b8e224df5c535de03a75798ff9959bfe
+SHA256: d2aade24242b181bf6d1b3dde462e2af3536e8ff83dccb365fb0c2055c6e0586
+SHA512: 68cd0c7d737e936f57315aec5d5a3cdac02e2e620f5baa5c6ff15c5174f04f191c9dcfe7f6a97f2efa7f91731209d0b49bfc2ccdca77bb0026197b0d128ab15c
+Homepage: https://github.com/Msprg/pve-tools
+Description: persistent console scrollback for Proxmox VE guests
+ Keeps a log of a VM's serial console or a container's console from the
+ moment the guest starts, whether or not a console is open, and replays its
+ tail when the console is opened in the PVE web GUI, so it is no longer blank.
+ Boot messages, kernel output, stuck shutdowns and link flaps that happened
+ before you looked are still there.
+ .
+ Logging uses QEMU's chardev logfile option (via the VM's args) and liblxc's
+ lxc.console.logfile. Replay wraps qm and dtach through dpkg-divert and only
+ emits plain text and colour codes, so recorded cursor movement, screen modes
+ and terminal queries cannot act on the live terminal. With python3-pyte the
+ history is rendered through a terminal emulator first.
+
