@@ -41,7 +41,7 @@ release can report a hash mismatch - wait a few minutes and retry.
 
 ```sh
 git clone --recurse-submodules https://github.com/Msprg/pve-tools.git
-make lint test build      # needs shellcheck, dpkg-dev, apt-utils, debhelper; python3-pyte for the full test run
+make lint test build      # needs shellcheck, dpkg-dev, apt-utils, debhelper, build-essential; python3-pyte for the full test run
 sudo make repo-smoke      # builds a throwaway signed repo and checks it with apt (isolated apt state)
 ```
 

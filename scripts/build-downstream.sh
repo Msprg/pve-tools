@@ -21,8 +21,9 @@ src="$pkgdir/$(conf SOURCE)"
 
 [ -f "$src/debian/rules" ] || { echo "$src has no debian/rules - run: git submodule update --init" >&2; exit 1; }
 if ! command -v dpkg-buildpackage >/dev/null \
-        || ! dpkg-query -W -f='${Status}' debhelper 2>/dev/null | grep -q 'ok installed'; then
-    echo "building $(basename "$pkgdir") needs dpkg-dev and debhelper (apt install dpkg-dev debhelper)" >&2
+        || ! dpkg-query -W -f='${Status}' debhelper 2>/dev/null | grep -q 'ok installed' \
+        || ! dpkg-query -W -f='${Status}' build-essential 2>/dev/null | grep -q 'ok installed'; then
+    echo "building $(basename "$pkgdir") needs dpkg-dev, debhelper and build-essential (apt install dpkg-dev debhelper build-essential)" >&2
     exit 1
 fi
 

@@ -55,7 +55,7 @@ v1 before installing v2 (`pve-mods-configure` refuses to run while v1 is install
 - `pvetools.conf` sets the downstream revision (`REVISION`) and maintainer.
 - `scripts/build-downstream.sh` exports the pinned tree, adds a changelog entry for
   `<upstream version>+pvetools<REVISION>`, runs upstream's own `build/gen-rules.sh` and
-  `dpkg-buildpackage -b`. Locally that needs `dpkg-dev` and `debhelper`.
+  `dpkg-buildpackage -b`. Locally that needs `dpkg-dev`, `debhelper` and `build-essential`.
 
 ### Changing the mods
 
