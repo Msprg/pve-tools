@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pve-tools apt repository</title>
+<style>
+  :root { --bg: #ffffff; --fg: #1d2125; --muted: #5b6470; --code: #f3f4f6; --border: #d9dde3; --link: #0b62c4; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15181c; --fg: #e6e8eb; --muted: #9aa3ad; --code: #20252b; --border: #333a42; --link: #6aa9ff; }
+  }
+  body { background: var(--bg); color: var(--fg); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+         max-width: 46rem; margin: 0 auto; padding: 2rem 1rem 4rem; }
+  h1 { font-size: 1.6rem; margin-bottom: .2rem; }
+  h2 { font-size: 1.15rem; margin-top: 2rem; }
+  p.lead { color: var(--muted); margin-top: 0; }
+  a { color: var(--link); }
+  pre, code { font: 13.5px/1.5 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; }
+  pre { background: var(--code); border: 1px solid var(--border); border-radius: 6px; padding: .8rem 1rem; overflow-x: auto; }
+  code { background: var(--code); padding: .05rem .3rem; border-radius: 4px; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; }
+  td, th { border-top: 1px solid var(--border); padding: .45rem .5rem; text-align: left; vertical-align: top; }
+</style>
+</head>
+<body>
+<h1>pve-tools</h1>
+<p class="lead">Signed apt repository for <a href="https://github.com/Msprg/pve-tools">pve-tools</a>, add-ons for Proxmox VE 8 and 9.</p>
+
+<h2>Packages</h2>
+<table>
+  <tr><td><a href="https://github.com/Msprg/pve-tools/tree/main/packages/pve-console-log"><code>pve-console-log</code></a></td>
+      <td>Persistent console scrollback for VM serial and CT consoles, replayed when you open the console in the web GUI.</td></tr>
+</table>
+
+<h2>Add the repository</h2>
+<p>On each node, as root:</p>
+<pre><code>curl -fsSL https://msprg.github.io/pve-tools/pve-tools-archive-keyring.gpg \
+    -o /usr/share/keyrings/pve-tools-archive-keyring.gpg
+echo "deb [signed-by=/usr/share/keyrings/pve-tools-archive-keyring.gpg] https://msprg.github.io/pve-tools stable main" \
+    &gt; /etc/apt/sources.list.d/pve-tools.list
+apt update
+apt install pve-console-log</code></pre>
+
+<h2>Signing key</h2>
+<p>Fingerprint <code>46FC 63EC 1284 85C8 DB89 25B5 90B9 F73A 6B83 0C5F</code>
+(<a href="pve-tools-archive-keyring.asc">ASCII-armored</a>, <a href="pve-tools-archive-keyring.gpg">binary keyring</a>).
+Check it with <code>gpg --show-keys /usr/share/keyrings/pve-tools-archive-keyring.gpg</code>.</p>
+
+<p>Source, issues and documentation: <a href="https://github.com/Msprg/pve-tools">github.com/Msprg/pve-tools</a> &middot; GPL-3.0-or-later</p>
+</body>
+</html>
