@@ -1,0 +1,92 @@
+# Release one package: push a tag <package>-v<version>, e.g. pve-console-log-v0.1.0.
+# The version must match the first entry of packages/<package>/debian/changelog.
+# The .deb is added to the apt repository on the gh-pages branch (re-signed with the
+# APT_SIGNING_KEY secret), checked with apt, published, and attached to a GitHub release.
+name: release
+on:
+  push:
+    tags: ['*-v*']
+permissions:
+  contents: write
+concurrency:
+  group: apt-repo
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends shellcheck python3-pyte dpkg-dev apt-utils
+      - name: Resolve package and version from the tag
+        id: tag
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          pkg=${TAG%-v*} ver=${TAG##*-v}
+          case "$pkg" in ''|*[!a-z0-9.+-]*) echo "::error::bad package name in tag '$TAG'"; exit 1 ;; esac
+          [ -d "packages/$pkg" ] || { echo "::error::no packages/$pkg for tag '$TAG'"; exit 1; }
+          cl=$(dpkg-parsechangelog -l "packages/$pkg/debian/changelog" -S Version)
+          [ "$cl" = "$ver" ] || { echo "::error::tag version '$ver' != changelog version '$cl'"; exit 1; }
+          echo "pkg=$pkg" >> "$GITHUB_OUTPUT"
+          echo "ver=$ver" >> "$GITHUB_OUTPUT"
+      - name: Lint and test
+        env:
+          PKG: ${{ steps.tag.outputs.pkg }}
+        run: |
+          make lint
+          scripts/run-tests.sh "packages/$PKG"
+      - name: Build
+        id: build
+        env:
+          PKG: ${{ steps.tag.outputs.pkg }}
+        run: echo "deb=$(scripts/build-deb.sh "packages/$PKG" dist)" >> "$GITHUB_OUTPUT"
+      - name: Check out the apt repository (gh-pages)
+        uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          path: site
+      - name: Add the package and re-sign the repository
+        env:
+          PKG: ${{ steps.tag.outputs.pkg }}
+          DEB: ${{ steps.build.outputs.deb }}
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+        run: |
+          pool="site/pool/main/$PKG"
+          if [ -e "$pool/$(basename "$DEB")" ]; then
+            echo "::error::$(basename "$DEB") is already published; bump the version"; exit 1
+          fi
+          mkdir -p "$pool" && cp "$DEB" "$pool/"
+          cp -a pages/. site/
+          export GNUPGHOME="$RUNNER_TEMP/gnupg"
+          mkdir -m 0700 "$GNUPGHOME"
+          printf '%s\n' "$APT_SIGNING_KEY" | gpg --batch --quiet --import
+          SIGNING_KEY=$(gpg --batch --with-colons --list-secret-keys | awk -F: '/^fpr:/ {print $10; exit}')
+          export SIGNING_KEY
+          scripts/build-apt-repo.sh site
+      - name: Verify the repository with apt before publishing
+        run: sudo scripts/repo-smoke-test.sh dist "file://$PWD/site" site/pve-tools-archive-keyring.gpg
+      - name: Publish the repository
+        env:
+          PKG: ${{ steps.tag.outputs.pkg }}
+          VER: ${{ steps.tag.outputs.ver }}
+        run: |
+          cd site
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "$PKG $VER"
+          git push
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          PKG: ${{ steps.tag.outputs.pkg }}
+          VER: ${{ steps.tag.outputs.ver }}
+          DEB: ${{ steps.build.outputs.deb }}
+        run: |
+          dpkg-parsechangelog -l "packages/$PKG/debian/changelog" -S Changes | tail -n +4 | sed 's/^  //' > "$RUNNER_TEMP/notes.md"
+          printf '\nInstall from the apt repository: https://msprg.github.io/pve-tools/\n' >> "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" "$DEB" --title "$PKG $VER" --notes-file "$RUNNER_TEMP/notes.md"

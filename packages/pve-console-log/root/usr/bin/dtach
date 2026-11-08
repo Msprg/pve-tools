@@ -1,0 +1,38 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# pve-console-log wrapper for dtach. The real dtach is dpkg-diverted to /usr/bin/dtach.real.
+#
+# PVE opens every CT console (xterm.js, noVNC, SPICE) as
+#   dtach -A /var/run/dtach/vzctlconsole<ctid> -r winch -z lxc-console -n <ctid> ...
+# dtach keeps that session alive between opens but has no scrollback, so on each open the
+# tail of the CT's console log is replayed. dtach clears the screen as it attaches, which
+# would wipe anything printed before it, so the replay is written by a background job just
+# after the exec, to the same terminal. Only that exact shape on a tty is special (not
+# cmode=shell, which runs lxc-attach); anything else is a plain exec of the real dtach.
+#
+# Like the qm wrapper this must never get in the way: no `set -e`, config parsed not
+# sourced, replay optional and time-limited, final exec unconditional.
+REAL=/usr/bin/dtach.real
+RENDER=/usr/lib/pve-console-log/pve-console-replay
+CONF=/etc/default/pve-console-log
+LOGDIR=/var/log
+
+conf() { sed -n "s/^$1=//p" "$CONF" 2>/dev/null | tail -n 1; }
+
+if [ "$1" = -A ] && [ -t 1 ] && [ -x "$RENDER" ]; then
+    case "$2" in
+        /var/run/dtach/vzctlconsole*) ctid=${2#/var/run/dtach/vzctlconsole} ;;
+        *) ctid= ;;
+    esac
+    case "$ctid" in ''|*[!0-9]*) ctid= ;; esac
+    is_console=
+    for a in "$@"; do [ "$a" = lxc-console ] && is_console=1; done
+    log="$LOGDIR/pve-console-$ctid.console.log"
+    if [ -n "$ctid" ] && [ -n "$is_console" ] && [ -r "$log" ] && [ -s "$log" ] \
+            && [ "$(conf REPLAY_CT)" != no ]; then
+        lines=$(conf REPLAY_LINES)
+        case "$lines" in ''|*[!0-9]*) lines=1000 ;; esac
+        ( sleep 0.5; timeout 3 "$RENDER" "$log" "$lines" ) 2>/dev/null &
+    fi
+fi
+exec "$REAL" "$@"

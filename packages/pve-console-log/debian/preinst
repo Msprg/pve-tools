@@ -1,0 +1,31 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -e
+
+# Divert the real qm and dtach to *.real before our wrappers are unpacked in their
+# place. Package upgrades of qemu-server / dtach then land in *.real automatically.
+divert_targets="/usr/sbin/qm /usr/bin/dtach"
+
+case "$1" in
+    install|upgrade)
+        for f in $divert_targets; do
+            owner=$(dpkg-divert --listpackage "$f")
+            case "$owner" in
+                ''|pve-console-log) ;;
+                LOCAL)
+                    echo "pve-console-log: $f already has a local diversion (a manual," >&2
+                    echo "  pre-package install of this tool, or another hand-made wrapper)." >&2
+                    echo "  Remove it first, then install again:" >&2
+                    echo "    rm $f && dpkg-divert --local --remove --rename $f" >&2
+                    exit 1 ;;
+                *)
+                    echo "pve-console-log: $f is already diverted by package '$owner'; refusing." >&2
+                    exit 1 ;;
+            esac
+        done
+        for f in $divert_targets; do
+            dpkg-divert --package pve-console-log --quiet --add --rename --divert "$f.real" "$f"
+        done
+        ;;
+esac
+exit 0

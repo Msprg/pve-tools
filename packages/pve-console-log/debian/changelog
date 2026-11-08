@@ -1,0 +1,12 @@
+pve-console-log (0.1.0) stable; urgency=medium
+
+  * Initial release.
+  * VMs: log the serial console via QEMU chardev logfile= (enable/disable per
+    VM with pve-console-log; stored in the VM's args, root@pam only).
+  * CTs: log /dev/console via lxc.console.logfile and switch cmode to console.
+  * Replay the last 1000 lines when a console is opened (qm terminal and the
+    dtach session PVE uses for CT consoles), rendered through python3-pyte
+    when available, allowlist-filtered to text and SGR colours otherwise.
+  * Tested on PVE 8.4 (QEMU 9.2, lxc 6.0); PVE 9 checked against source only.
+
+ -- Msprg <18015488+Msprg@users.noreply.github.com>  Sun, 08 Nov 2026 15:41:43 +0100

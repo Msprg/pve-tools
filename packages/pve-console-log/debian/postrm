@@ -1,0 +1,31 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -e
+
+divert_targets="/usr/sbin/qm /usr/bin/dtach"
+
+case "$1" in
+    remove|abort-install|disappear)
+        # our wrappers are gone by now; move the real binaries back into place
+        for f in $divert_targets; do
+            if [ "$(dpkg-divert --listpackage "$f")" = pve-console-log ]; then
+                dpkg-divert --package pve-console-log --quiet --remove --rename --divert "$f.real" "$f"
+            fi
+        done
+        ;;
+esac
+
+case "$1" in
+    purge)
+        # Guest configs still pointing at our logs keep logging after removal (QEMU and
+        # liblxc write the file themselves), now without rotation. Say which ones.
+        guests=$(grep -l -E 'pve-console-[0-9]+\.(serial[0-3]|console)\.log' \
+                 /etc/pve/qemu-server/*.conf /etc/pve/lxc/*.conf 2>/dev/null || true)
+        if [ -n "$guests" ]; then
+            echo "pve-console-log: these guest configs still log to /var/log/pve-console-*.log"
+            echo "  (now unrotated); remove the args / lxc.console.logfile lines to stop that:"
+            for g in $guests; do echo "    $g"; done
+        fi
+        ;;
+esac
+exit 0

@@ -1,0 +1,2 @@
+/etc/default/pve-console-log
+/etc/logrotate.d/pve-console-log

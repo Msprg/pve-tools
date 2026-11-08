@@ -1,0 +1,10 @@
+# pve-console-log settings. Read (not sourced) by the qm/dtach wrappers on every
+# console open; plain KEY=value lines, no quotes, no shell syntax.
+
+# Lines of console history replayed when a console is opened (default 1000, which
+# is also the scrollback PVE's xterm.js keeps; more would scroll out immediately).
+REPLAY_LINES=1000
+
+# Set to "no" to keep logging but stop replaying into VM serial consoles / CT consoles.
+REPLAY_VM=yes
+REPLAY_CT=yes

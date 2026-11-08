@@ -1,0 +1,178 @@
+#!/bin/bash
+# SPDX-License-Identifier: GPL-3.0-or-later
+# pve-console-log - persistent console logs + replay for Proxmox VE guests
+# https://github.com/Msprg/pve-tools
+#
+# Usage:
+#   pve-console-log enable  [-n] <vmid|ctid> [serialN]   turn logging on for a guest (-n: dry run)
+#   pve-console-log disable [-n] <vmid|ctid> [serialN]   turn it off again
+#   pve-console-log status                               what is set up on this node
+#   pve-console-log show [--plain] <vmid|ctid> [serialN] print the replay (pipe to less -R)
+#
+# VMs: the guest's serial port (default serial0, must be `serialN: socket`) gets QEMU's own
+# logfile= option via a `-set` override in the VM's `args:` (root@pam only). QEMU then
+# appends everything the guest writes to /var/log/pve-console-<vmid>.<serialN>.log from the
+# first line on, whether or not a console is open.
+# CTs: sets `cmode: console` (the GUI otherwise attaches to an empty getty on tty1) and the
+# raw key `lxc.console.logfile:`; liblxc writes /dev/console to /var/log/pve-console-<ctid>.console.log.
+#
+# Changes take effect on the next start of the guest (stop+start, or qm/pct reboot).
+# Run this on the node the guest lives on. Logs are rotated by /etc/logrotate.d/pve-console-log;
+# replay settings are in /etc/default/pve-console-log.
+set -euo pipefail
+
+RENDER=/usr/lib/pve-console-log/pve-console-replay
+CONF=/etc/default/pve-console-log
+
+die() { echo "error: $*" >&2; exit 1; }
+
+check_ids() { # id iface
+    [[ $1 =~ ^[0-9]+$ ]] || die "bad guest id '$1'"
+    [[ $2 =~ ^serial[0-3]$ ]] || die "bad serial interface '$2' (serial0..serial3)"
+}
+
+logpath() { echo "/var/log/pve-console-$1.$2.log"; }   # vmid iface
+ct_logpath() { echo "/var/log/pve-console-$1.console.log"; }
+is_ct() { [ -f "/etc/pve/lxc/$1.conf" ]; }
+is_vm() { [ -f "/etc/pve/qemu-server/$1.conf" ]; }
+main_section() { awk '/^\[/{exit} {print}' "$1"; }      # config without snapshot sections
+
+# raw lxc.* keys have no `pct set` option; edit the config file directly. Insert before the
+# first [snapshot] section (PVE keeps raw keys in the main section), or append when there is none.
+conf_add_key() { # file line
+    LINE="$2" perl -0pi -e 's/^(?=\[)/$ENV{LINE}\n/m or do { $_ .= "\n" unless /\n\z/; $_ .= "$ENV{LINE}\n" }' "$1"
+}
+conf_del_key() { # file key  (main section only; snapshot sections keep what they recorded)
+    KEY="$2" perl -ni -e '$s = 1 if /^\[/; print if $s || !/^\Q$ENV{KEY}\E:/' "$1"
+}
+
+mkargs() { # vmid iface
+    echo "-set chardev.$2.logfile=$(logpath "$1" "$2") -set chardev.$2.logappend=on"
+}
+
+# drop our -set pair for <iface> from an args string (stdin -> stdout)
+strip_ours() { # iface
+    sed -E "s# ?-set chardev\.$1\.log(file=[^ ]*|append=on)##g; s#^ +##"
+}
+
+conf_value() { # key default
+    local v; v=$(sed -n "s/^$1=//p" "$CONF" 2>/dev/null | tail -n 1)
+    echo "${v:-$2}"
+}
+
+cmd_enable() {
+    local dry=0; [ "${1:-}" = -n ] && { dry=1; shift; }
+    local id=${1:?guest id required} iface=${2:-serial0}
+    check_ids "$id" "$iface"
+    if is_ct "$id"; then
+        [ $# -lt 2 ] || die "CT $id: a container has one console, no serial interface argument"
+        local f="/etc/pve/lxc/$id.conf" line cur
+        line="lxc.console.logfile: $(ct_logpath "$id")"
+        cur=$(main_section "$f" | grep -E '^(cmode|lxc\.console\.logfile):' | tr '\n' ' ' || true)
+        echo "CT $id now: ${cur:-<cmode tty (default), no console logfile>}"
+        echo "     ->    cmode: console $line"
+        (( dry )) && return 0
+        pct set "$id" --cmode console
+        conf_del_key "$f" lxc.console.logfile
+        conf_add_key "$f" "$line"
+        echo "takes effect on the next CT start (pct reboot $id, or stop+start)"
+        return 0
+    fi
+    is_vm "$id" || die "no VM or CT $id on this node"
+    local conf cur new
+    conf=$(qm config "$id")                       # includes pending changes
+    grep -qx "$iface: socket" <<<"$conf" || die "VM $id has no '$iface: socket' in its config"
+    cur=$(sed -n 's/^args: //p' <<<"$conf")
+    new=$(strip_ours "$iface" <<<"$cur")
+    new="${new:+$new }$(mkargs "$id" "$iface")"
+    echo "VM $id args: ${cur:-<none>}"
+    echo "     ->      $new"
+    (( dry )) && return 0
+    qm set "$id" --args "$new"
+    echo "takes effect on the next QEMU start (qm reboot $id, or stop+start)"
+}
+
+cmd_disable() {
+    local dry=0; [ "${1:-}" = -n ] && { dry=1; shift; }
+    local id=${1:?guest id required} iface=${2:-serial0}
+    check_ids "$id" "$iface"
+    if is_ct "$id"; then
+        local f="/etc/pve/lxc/$id.conf"
+        echo "CT $id: remove lxc.console.logfile ($(main_section "$f" | grep -c '^lxc\.console\.logfile:' || true) line(s)); cmode is left as is"
+        (( dry )) && return 0
+        conf_del_key "$f" lxc.console.logfile
+        return 0
+    fi
+    is_vm "$id" || die "no VM or CT $id on this node"
+    local cur new
+    cur=$(qm config "$id" | sed -n 's/^args: //p')
+    new=$(strip_ours "$iface" <<<"$cur")
+    echo "VM $id args: ${cur:-<none>}"
+    echo "     ->      ${new:-<none>}"
+    (( dry )) && return 0
+    if [ -n "$new" ]; then qm set "$id" --args "$new"; else qm set "$id" --delete args; fi
+}
+
+human() { numfmt --to=iec --suffix=B "$1" 2>/dev/null || echo "${1}B"; }
+
+cmd_status() {
+    local f owner
+    echo "pve-console-log $(dpkg-query -W -f='${Version}' pve-console-log 2>/dev/null || echo '(not installed as a package)')"
+    for f in /usr/sbin/qm /usr/bin/dtach; do
+        owner=$(dpkg-divert --listpackage "$f" 2>/dev/null || true)
+        if [ -n "$owner" ]; then owner="diverted by $owner"; else owner="NOT diverted - no replay"; fi
+        printf '  %-15s %s\n' "$f" "$owner"
+    done
+    if python3 -I -c 'import pyte' 2>/dev/null; then
+        echo "  replay: rendered through python3-pyte, $(conf_value REPLAY_LINES 1000) lines (VM: $(conf_value REPLAY_VM yes), CT: $(conf_value REPLAY_CT yes))"
+    else
+        echo "  replay: plain allowlist filter (install python3-pyte for rendered replay), $(conf_value REPLAY_LINES 1000) lines"
+    fi
+    echo "guests with console logging on this node:"
+    local any=0 id log c ifaces
+    for c in /etc/pve/qemu-server/*.conf; do
+        [ -e "$c" ] || continue
+        id=$(basename "$c" .conf)
+        ifaces=$(main_section "$c" | sed -n 's/^args: //p' | grep -oE 'chardev\.serial[0-3]\.logfile=' | grep -oE 'serial[0-3]' | sort -u || true)
+        for iface in $ifaces; do
+            any=1; log=$(logpath "$id" "$iface")
+            printf '  VM %-6s %-8s %s %s\n' "$id" "$iface" "$log" "$([ -f "$log" ] && human "$(stat -c %s "$log")" || echo '(no log yet)')"
+        done
+    done
+    for c in /etc/pve/lxc/*.conf; do
+        [ -e "$c" ] || continue
+        id=$(basename "$c" .conf)
+        main_section "$c" | grep -q '^lxc\.console\.logfile: /var/log/pve-console-' || continue
+        any=1; log=$(ct_logpath "$id")
+        printf '  CT %-6s %-8s %s %s\n' "$id" "$(main_section "$c" | sed -n 's/^cmode: //p' | grep . || echo tty)" "$log" \
+            "$([ -f "$log" ] && human "$(stat -c %s "$log")" || echo '(no log yet)')"
+    done
+    (( any )) || echo "  (none - enable with: pve-console-log enable <vmid|ctid>)"
+}
+
+cmd_show() {
+    local plain=()
+    [ "${1:-}" = --plain ] && { plain=(--plain); shift; }
+    local id=${1:?guest id required} iface=${2:-serial0} log
+    check_ids "$id" "$iface"
+    if is_ct "$id"; then log=$(ct_logpath "$id"); else log=$(logpath "$id" "$iface"); fi
+    [ -s "$log" ] || die "no console log for $id ($log)"
+    "$RENDER" "${plain[@]}" "$log" "$(conf_value REPLAY_LINES 1000)"
+}
+
+usage() { sed -n '2,/^set -euo/p' "$0" | sed '$d; /SPDX-License-Identifier/d; s/^# \{0,1\}//'; }
+
+main() {
+    local sub=${1:-}; shift || true
+    case "$sub" in
+        enable)  cmd_enable "$@" ;;
+        disable) cmd_disable "$@" ;;
+        status)  cmd_status "$@" ;;
+        show)    cmd_show "$@" ;;
+        help|-h|--help) usage ;;
+        *) usage >&2; exit 2 ;;
+    esac
+}
+
+# allow `source`-ing for tests
+[[ "${BASH_SOURCE[0]}" != "$0" ]] || main "$@"

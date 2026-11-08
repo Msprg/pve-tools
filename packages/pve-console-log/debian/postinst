@@ -1,0 +1,23 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+set -e
+
+case "$1" in
+    configure)
+        # A manual install of the pre-package version left this rotation rule for the same
+        # log files; two rules for one glob make logrotate skip both.
+        old=/etc/logrotate.d/pve-console
+        if [ -f "$old" ] && grep -q 'copytruncate is safe with logappend=on' "$old"; then
+            rm -f "$old"
+            echo "pve-console-log: removed $old (superseded by /etc/logrotate.d/pve-console-log)"
+        fi
+        if ! python3 -I -c 'import pyte' 2>/dev/null; then
+            echo "pve-console-log: python3-pyte is not installed; console replay uses the plain filter."
+            echo "  For rendered replay (redraws collapsed, line drawing shown): apt install python3-pyte"
+        fi
+        if [ -z "$2" ]; then
+            echo "pve-console-log: enable logging per guest with: pve-console-log enable <vmid|ctid>"
+        fi
+        ;;
+esac
+exit 0

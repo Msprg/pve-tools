@@ -1,0 +1,30 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install tools
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends shellcheck python3-pyte dpkg-dev apt-utils
+      - name: Lint
+        run: make lint
+      - name: Tests (with python3-pyte)
+        run: make test
+      - name: Renderer tests without python3-pyte
+        run: python3 -S -m unittest discover -s packages/pve-console-log/tests -p 'test_*.py'
+      - name: Build packages
+        run: make build
+      - name: Signed apt repo smoke test (throwaway key)
+        run: sudo scripts/repo-smoke-test.sh dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debs
+          path: dist/*.deb

@@ -1,0 +1,35 @@
+#!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# pve-console-log wrapper for qm. The real qm is dpkg-diverted to /usr/sbin/qm.real.
+#
+# Only `qm terminal <vmid> ...` on a tty is special - that is what the GUI's xterm.js
+# console runs: the tail of the VM's serial console log is replayed first, so a freshly
+# opened console is not blank. Every other call is a plain exec of the real qm.
+#
+# This runs for every qm call on the node (pvedaemon starts VMs through it), so it must
+# never get in the way: no `set -e`, the config is parsed rather than sourced, the
+# replay is optional and time-limited, and the final exec is unconditional.
+REAL=/usr/sbin/qm.real
+RENDER=/usr/lib/pve-console-log/pve-console-replay
+CONF=/etc/default/pve-console-log
+LOGDIR=/var/log
+
+conf() { sed -n "s/^$1=//p" "$CONF" 2>/dev/null | tail -n 1; }
+
+if [ "$1" = terminal ] && [ -t 1 ] && [ -x "$RENDER" ] && [ "$(conf REPLAY_VM)" != no ]; then
+    vmid=$2; iface=serial0; prev=
+    for a in "$@"; do
+        [ "$prev" = -iface ] && iface=$a
+        prev=$a
+    done
+    case "$vmid" in ''|*[!0-9]*) vmid= ;; esac
+    case "$iface" in serial[0-3]) ;; *) vmid= ;; esac
+    log="$LOGDIR/pve-console-$vmid.$iface.log"
+    if [ -n "$vmid" ] && [ -r "$log" ] && [ -s "$log" ]; then
+        lines=$(conf REPLAY_LINES)
+        case "$lines" in ''|*[!0-9]*) lines=1000 ;; esac
+        # the renderer prints only text + SGR colours, framed by replay banners
+        timeout 3 "$RENDER" "$log" "$lines" 2>/dev/null
+    fi
+fi
+exec "$REAL" "$@"

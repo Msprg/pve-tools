@@ -1,0 +1,255 @@
+#!/usr/bin/python3 -I
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Part of pve-console-log (https://github.com/Msprg/pve-tools).
+"""pve-console-replay [--plain] <logfile> [lines]
+
+Print the tail of a pve-console-log console log (default: last 1000 lines),
+framed by replay banners, in a form that is safe to write into a live terminal
+(the GUI's xterm.js) right before the console attaches. The qm/dtach wrappers
+only call this script, so the replay length and format are set here alone.
+
+The log is a raw recording of terminal output: cursor movement, screen clears,
+scroll regions, alternate-screen switches, mode changes (mouse tracking, keypad,
+bracketed paste, charsets) and terminal *queries* (cursor position, colours,
+mode support). Replayed raw, that history acts on the live terminal: it erases
+the replay itself, leaks modes into the live session, and makes xterm.js answer
+the queries into the guest as if they had been typed. So the output of this
+script contains only printable text, CR LF and SGR colour codes:
+
+- if python3-pyte is installed, the tail is rendered through a terminal
+  emulator first, so redraws (progress bars, cursor-up redraws as Claude Code
+  does, TUIs on the main screen) collapse to what was actually visible, and
+  screen clears push the old screen into history instead of losing it;
+- otherwise (or with --plain) an allowlist filter drops every escape sequence
+  except SGR.
+
+Full-screen (alternate screen) sessions - nano/vim/less/htop with an xterm TERM -
+are cut out and replaced by one marker line; if one is still running at the end
+of the log, its last frame is shown (rendered) or noted (fallback).
+"""
+import os
+import re
+import sys
+
+MAX_BYTES = 512 * 1024     # tail read by the allowlist fallback (fast)
+BYTES_PER_LINE = 192       # pyte window = lines * this (min 96 KB); pyte parses ~3 us/byte,
+                           # so 1000 lines -> 192 KB -> ~0.7 s per console open
+COLS, ROWS = 200, 50       # emulator geometry; the recorded geometry is unknown, so render wide
+DEFAULT_LINES = 1000       # PVE's xterm.js keeps 1000 lines of scrollback; more would scroll out at once
+MAX_LINES = 10000          # upper bound for the [lines] argument
+
+ALT_SCREEN = re.compile(rb'\x1b\[\?(?:1049|1047|47)([hl])')
+OMITTED = b'\r\n\x1b[2m[full-screen app output omitted]\x1b[0m\r\n'
+
+# everything an ESC can start; only SGR (ESC [ ... m) survives the allowlist
+ESC_SEQ = re.compile(r'''
+      \x1b\[[0-?]*[ -/]*[@-~]                 # CSI ... final
+    | \x1b\][^\x07\x1b]*(?:\x07|\x1b\\)?      # OSC ... BEL/ST
+    | \x1b[PX^_][^\x1b]*(?:\x1b\\)?           # DCS / SOS / PM / APC ... ST
+    | \x1b[ -/]*[0-~]                         # other ESC sequences (charsets, ESC 7/8, ESC =, ESC c, ...)
+    | \x1b                                    # stray ESC
+''', re.X)
+SGR = re.compile(r'\x1b\[[0-9;:]*m')
+# sequences that change nothing a replay can show, and that pyte would print as text:
+# DCS/SOS/PM/APC strings, CSI with intermediates (ESC[!p DECSTR, ESC[?2026$p DECRQM) or
+# with </=/> markers (kitty keyboard, XTVERSION), full reset ESC c (pyte would drop its
+# history), ESC # (DECALN etc.)
+NOT_FOR_RENDERING = re.compile(r'''
+      \x1b[PX^_][^\x1b]*(?:\x1b\\)?
+    | \x1b\[[<=>][0-?]*[ -/]*[@-~]
+    | \x1b\[[0-?]*[ -/]+[@-~]
+    | \x1bc
+    | \x1b\#[0-~]
+''', re.X)
+# DEC special graphics (line drawing), selected by ESC ( 0 / ESC ) 0 + SO, as TERM=linux and
+# xterm terminfo do for boxes; translated to Unicode so neither pyte nor the fallback shows "qqqx"
+DEC_GRAPHICS = str.maketrans({
+    '`': '\u25c6', 'a': '\u2592', 'f': '\u00b0', 'g': '\u00b1', 'j': '\u2518', 'k': '\u2510',
+    'l': '\u250c', 'm': '\u2514', 'n': '\u253c', 'o': '\u23ba', 'p': '\u23bb', 'q': '\u2500',
+    'r': '\u23bc', 's': '\u23bd', 't': '\u251c', 'u': '\u2524', 'v': '\u2534', 'w': '\u252c',
+    'x': '\u2502', 'y': '\u2264', 'z': '\u2265', '{': '\u03c0', '|': '\u2260', '}': '\u00a3', '~': '\u00b7'})
+CHARSET_OR_SHIFT = re.compile(r'\x1b([()])([0-~])|([\x0e\x0f])')
+ESC_OR_TEXT = re.compile(r'(\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07\x1b]*(?:\x07|\x1b\\)?|.))|([^\x1b]+)', re.S)
+
+
+def translate_charsets(text):
+    """Apply G0/G1 designations and SO/SI shifts ourselves: line-drawing text becomes
+    Unicode, and the designation/shift controls are removed."""
+    g = {'(': 'B', ')': 'B'}
+    shifted = False
+    out = []
+    pos = 0
+    for m in CHARSET_OR_SHIFT.finditer(text):
+        out.append(_charset_span(text[pos:m.start()], g[')' if shifted else '(']))
+        if m.group(1):
+            g[m.group(1)] = m.group(2)
+        else:
+            shifted = m.group(3) == '\x0e'
+        pos = m.end()
+    out.append(_charset_span(text[pos:], g[')' if shifted else '(']))
+    return ''.join(out)
+
+
+def _charset_span(chunk, charset):
+    if charset != '0':
+        return chunk
+    # translate only text, never the inside of escape sequences
+    return ''.join(m.group(0) if m.group(1) else m.group(2).translate(DEC_GRAPHICS)
+                   for m in ESC_OR_TEXT.finditer(chunk))
+# C0 except TAB/LF/CR/ESC, DEL, and C1 (U+0080..U+009F: xterm.js treats them as controls too)
+CONTROLS = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1a\x1c-\x1f\x7f-\x9f]')
+
+
+def read_tail(path, limit):
+    with open(path, 'rb') as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        f.seek(max(0, size - limit))
+        data = f.read()
+    if size > limit:               # start on a line boundary
+        nl = data.find(b'\n')
+        data = data[nl + 1:] if nl >= 0 else b''
+    return data
+
+
+def split_alt_screen(data):
+    """Return (main-screen bytes with alt-screen spans replaced by a marker,
+    bytes of an alt-screen span still open at the end of the log or None)."""
+    out, pos, inside, seen, start = [], 0, False, False, 0
+    for m in ALT_SCREEN.finditer(data):
+        if m.group(1) == b'h':
+            if not inside:
+                out.append(data[pos:m.start()])
+                inside, start = True, m.end()
+        elif inside:
+            out.append(OMITTED)
+            inside, pos = False, m.end()
+        elif not seen:
+            # the tail starts in the middle of a full-screen session
+            out, pos = [OMITTED], m.end()
+        seen = True
+    if inside:
+        return b''.join(out), data[start:]
+    out.append(data[pos:])
+    return b''.join(out), None
+
+
+def sanitize(text):
+    """Allowlist: printable text, TAB, CR, LF and SGR only; LF normalised to CR LF."""
+    text = ESC_SEQ.sub(lambda m: m.group(0) if SGR.fullmatch(m.group(0)) else '', text)
+    text = CONTROLS.sub('', text)
+    return re.sub(r'\r*\n', '\r\n', text)
+
+
+# ---- rendering through pyte -------------------------------------------------
+
+def make_screen(pyte, rows):
+    class Screen(pyte.HistoryScreen):
+        def erase_in_display(self, how=0, *args, **kwargs):
+            # a full clear (ED2/ED3, or ED0 from home as TERM=linux does it) pushes
+            # the screen into history first, like VTE's scroll-on-clear; ED3 would
+            # otherwise wipe history, which is the opposite of what a replay is for
+            if how in (2, 3) or (how == 0 and self.cursor.x == 0 and self.cursor.y == 0):
+                last = max((y for y in range(self.lines) if ''.join(
+                    self.buffer[y][x].data for x in range(self.columns)).strip()), default=-1)
+                for y in range(last + 1):
+                    self.history.top.append(self.buffer[y])
+                    self.buffer[y] = type(self.buffer[y])(self.buffer[y].default)
+                how = 2 if how == 3 else how
+            super().erase_in_display(how)
+
+    return Screen(COLS, rows, history=20000, ratio=0.5)
+
+
+def render(pyte, text, rows, want):
+    screen = make_screen(pyte, rows)
+    pyte.Stream(screen).feed(NOT_FOR_RENDERING.sub('', text))
+    history = list(screen.history.top)[-(want + rows):]   # only convert what can be shown
+    lines = history + [screen.buffer[y] for y in range(screen.lines)]
+    return [line_to_text(line, screen.columns) for line in lines]
+
+
+COLOURS = {'black': 0, 'red': 1, 'green': 2, 'brown': 3, 'blue': 4,
+           'magenta': 5, 'cyan': 6, 'white': 7}
+
+
+def colour(value, base):
+    if value in COLOURS:
+        return [str(base + COLOURS[value])]
+    if re.fullmatch(r'[0-9a-fA-F]{6}', value or ''):
+        return [str(base + 8), '2'] + [str(int(value[i:i + 2], 16)) for i in (0, 2, 4)]
+    return []
+
+
+def sgr_for(ch):
+    codes = colour(ch.fg, 30) + colour(ch.bg, 40)
+    codes += [c for c, on in (('1', ch.bold), ('3', ch.italics), ('4', ch.underscore),
+                              ('9', ch.strikethrough), ('7', ch.reverse)) if on]
+    return '\x1b[0;' + ';'.join(codes) + 'm' if codes else '\x1b[0m'
+
+
+def line_to_text(line, cols):
+    cells = [line[x] for x in range(cols)]
+    plain = lambda c: c.bg == 'default' and not c.reverse
+    end = len(cells)
+    while end and cells[end - 1].data in ('', ' ') and plain(cells[end - 1]):
+        end -= 1
+    out, cur = [], '\x1b[0m'
+    for c in cells[:end]:
+        s = sgr_for(c)
+        if s != cur:
+            out.append(s)
+            cur = s
+        out.append(c.data)
+    if cur != '\x1b[0m':
+        out.append('\x1b[0m')
+    return ''.join(out)
+
+
+def strip_blank_tail(lines):
+    while lines and not SGR.sub('', lines[-1]).strip():
+        lines.pop()
+    return lines
+
+
+def main():
+    args = sys.argv[1:]
+    plain = '--plain' in args
+    args = [a for a in args if a != '--plain']
+    if not args or not args[0] or args[0].startswith('-'):
+        sys.exit(__doc__)
+    path = args[0]
+    want = int(args[1]) if len(args) > 1 and args[1].isdigit() and int(args[1]) > 0 else DEFAULT_LINES
+    want = min(want, MAX_LINES)
+    pyte = None
+    if not plain:
+        try:
+            import pyte
+        except ImportError:
+            pyte = None
+    window = max(96 * 1024, want * BYTES_PER_LINE) if pyte else MAX_BYTES
+    main_bytes, open_alt = split_alt_screen(read_tail(path, window))
+
+    decode = lambda b: translate_charsets(b.decode('utf-8', 'replace'))
+    if pyte:
+        lines = strip_blank_tail(render(pyte, decode(main_bytes), ROWS, want))[-want:]
+        if open_alt is not None:
+            frame = strip_blank_tail(render(pyte, decode(open_alt), ROWS, 0)[-ROWS:])
+            lines += ['\x1b[2m[full-screen app still running - its last frame:]\x1b[0m'] + frame + \
+                     ['\x1b[2m[if it does not redraw by itself, press Ctrl-L]\x1b[0m']
+        text = '\r\n'.join(lines)
+    else:
+        lines = strip_blank_tail(sanitize(decode(main_bytes)).split('\r\n'))
+        if open_alt is not None:
+            lines.append('\x1b[2m[full-screen app still running - press Ctrl-L to redraw it]\x1b[0m')
+        text = '\r\n'.join(lines[-want:])
+
+    body = sanitize(text)                 # belt and braces: nothing but text + SGR leaves here
+    count = body.count('\r\n') + 1
+    out = (f'--- replay: last {count} lines of {path} (live output follows) ---\r\n'
+           + body + '\x1b[0m\r\n--- end of replay ---\r\n')
+    sys.stdout.buffer.write(out.encode('utf-8', 'replace'))
+
+
+if __name__ == '__main__':
+    main()
