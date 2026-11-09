@@ -1,0 +1,4 @@
+[submodule "packages/pve-mods/source"]
+	path = packages/pve-mods/source
+	url = https://github.com/Msprg/PVE-mods.git
+	branch = pvetools

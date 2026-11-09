@@ -11,6 +11,11 @@
 # File times are set to the changelog timestamp, so the same tree builds the same .deb.
 set -euo pipefail
 
+# packages built from another project's debian/ tree (see pvetools.conf) take the other path
+if [ -f "${1:?package dir}/pvetools.conf" ]; then
+    exec "$(dirname "$(readlink -f "$0")")/build-downstream.sh" "$@"
+fi
+
 pkgdir=$(readlink -f "${1:?package dir}")
 mkdir -p "${2:?output dir}"
 out=$(readlink -f "$2")
