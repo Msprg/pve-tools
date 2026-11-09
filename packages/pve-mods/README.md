@@ -52,7 +52,9 @@ v1 before installing v2 (`pve-mods-configure` refuses to run while v1 is install
 - `source/` is a git submodule: the **`pvetools` branch** of Msprg/PVE-mods, pinned to a
   commit. That branch is upstream's release tag plus any local changes; the fork's `main` is
   not used by this build.
-- `pvetools.conf` sets the downstream revision (`REVISION`) and maintainer.
+- `pvetools.conf` sets the downstream revision (`REVISION`) and maintainer; `prebuild.sh`
+  repeats the step upstream's release CI does before building (writing the version into
+  `Config.pm`).
 - `scripts/build-downstream.sh` exports the pinned tree, adds a changelog entry for
   `<upstream version>+pvetools<REVISION>`, runs upstream's own `build/gen-rules.sh` and
   `dpkg-buildpackage -b`. Locally that needs `dpkg-dev`, `debhelper` and `build-essential`.

@@ -7,8 +7,9 @@
 #   - exports the submodule's committed tree (local edits are ignored, so builds match the pin)
 #   - adds a changelog entry for <upstream version>+pvetools<REVISION>, and makes us the
 #     Maintainer (the original one is kept as XSBC-Original-Maintainer)
-#   - runs upstream's own build steps: build/gen-rules.sh >> debian/rules (when present),
-#     then dpkg-buildpackage -b
+#   - runs <package-dir>/prebuild.sh <tree> <version> if present (steps upstream's release CI
+#     does before building), then upstream's build/gen-rules.sh >> debian/rules (when present)
+#     and dpkg-buildpackage -b
 # Prints the path of the built .deb on stdout; build output goes to stderr.
 set -euo pipefail
 
@@ -51,7 +52,13 @@ awk -v m="$(conf MAINTAINER)" '
     { print }' debian/control > debian/control.new
 mv debian/control.new debian/control
 
-[ -f build/gen-rules.sh ] && bash build/gen-rules.sh >> debian/rules
+# package-specific steps upstream's own release workflow performs before building
+if [ -x "$pkgdir/prebuild.sh" ]; then
+    "$pkgdir/prebuild.sh" "$work/$name" "$version" >&2
+fi
+if [ -f build/gen-rules.sh ]; then
+    bash build/gen-rules.sh >> debian/rules
+fi
 SOURCE_DATE_EPOCH=$epoch dpkg-buildpackage -us -uc -b >&2
 
 deb="../${name}_${version}_all.deb"
